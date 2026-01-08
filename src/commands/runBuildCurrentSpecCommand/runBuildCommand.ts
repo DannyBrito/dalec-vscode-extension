@@ -63,16 +63,35 @@ export async function runBuildCommand(
 
   // Extract name, version, and revision from the Dalec spec
   const specMetadataResult = await extractDalecSpecMetadata(document);
+  const metadataExtractionFailed = failed(specMetadataResult);
   
   // Default to empty metadata if extraction fails, but warn the user
   let specMetadata: DalecSpecMetadata;
-  if (failed(specMetadataResult)) {
+  if (metadataExtractionFailed) {
     void vscode.window.showWarningMessage(
       `Could not extract metadata from spec: ${specMetadataResult.error}. Build will continue without image name/version.`
     );
     specMetadata = {};
   } else {
     specMetadata = specMetadataResult.result;
+  }
+
+  const shouldResolveMetadata =
+    metadataExtractionFailed ||
+    specMetadata.name?.includes('${') ||
+    specMetadata.version?.includes('${') ||
+    specMetadata.revision?.includes('${');
+  if (shouldResolveMetadata) {
+    const resolvedMetadata = await resolveDalecImageMetadata(document.uri.fsPath, {
+      target,
+      buildArgs: argsSelection.values,
+      buildContexts: contextSelection.additionalContexts,
+    });
+    specMetadata = {
+      name: resolvedMetadata.name ?? specMetadata.name,
+      version: resolvedMetadata.version ?? specMetadata.version,
+      revision: resolvedMetadata.revision ?? specMetadata.revision,
+    };
   }
 
   // Construct image tag as version-revision
